@@ -7,7 +7,7 @@ using System.Threading;
 using UnityEngine.UI;
 using UniRx;
 
-public class ConnectSc: MonoBehaviour
+public class ConnectScript: MonoBehaviour
 {
     public InputField peerIpInputField;
     public InputField messageInputField;
@@ -65,11 +65,28 @@ public class ConnectSc: MonoBehaviour
         {
             connectResponseText.text = "接続されました。";
             _peerEp = new IPEndPoint(ipAddress, Port);
+            return;
         }
-        else
+        
+        try
         {
-            Debug.LogError("相手のIPアドレスは、無効なIPアドレスです。");
+            var ipAddresses = Dns.GetHostAddresses(peerIp);
+            if (ipAddresses.Length > 0)
+            {
+                connectResponseText.text = "接続されました。";
+                Debug.Log("ドメイン指定での接続。ドメイン名「"+peerIp+"」のIP:"+ipAddresses[0]);
+                _peerEp = new IPEndPoint(ipAddresses[0], Port);
+                return;
+            }
+            Debug.LogError("ドメインからIPアドレスが解決できませんでした。");
         }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
+
+        Debug.LogError("相手のIPアドレスは、無効なIPアドレスです。");
     }
 
     private void ReceiveData()
