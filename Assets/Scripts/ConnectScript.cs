@@ -97,12 +97,13 @@ public class ConnectScript: MonoBehaviour
             byte[] getByte = _udpClient.Receive(ref ipEnd);
             var receivedMessage = Encoding.UTF8.GetString(getByte);
             _subject.OnNext(receivedMessage);
+            Debug.Log($"{receivedMessage} , 受信時刻：{DateTime.Now}、ミリ秒：{DateTime.Now.Millisecond}");
         }
     }
 
     private void SendMessage()
     {
-        var messageToSend = Encoding.UTF8.GetBytes(messageInputField.text);
+        var messageToSend = Encoding.UTF8.GetBytes($"送信時刻：{DateTime.Now}、ミリ秒：{DateTime.Now.Millisecond}、内容：{messageInputField.text}");
         try
         {
             _udpClient.Send(messageToSend, messageToSend.Length, _peerEp);
