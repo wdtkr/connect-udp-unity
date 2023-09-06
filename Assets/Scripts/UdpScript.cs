@@ -61,9 +61,8 @@ public class UdpScript : MonoBehaviour
         
         receiveTextLog.text = "";
         peerFqdnText.text = peerFqdn;
-
-        sendButton.onClick.AddListener(() => ReceiveData(messageInputField.text));
-        // sendButton.onClick.AddListener(() => SendData(messageInputField.text));
+        
+        sendButton.onClick.AddListener(() => SendData(messageInputField.text));
         startReceiveButton.onClick.AddListener(StartReceiveLoop);
         endReceiveButton.onClick.AddListener(() =>
         {
@@ -147,6 +146,7 @@ public class UdpScript : MonoBehaviour
     public void DebugCallback(string message)
     {
         Debug.Log(message);
+        
     }
 
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
@@ -171,6 +171,7 @@ public class UdpScript : MonoBehaviour
 
     private void ReceiveLoop()
     {
+        _staticMessageSubject.OnNext("受信を開始しました。");
         while (true)
         {
             receiveUDPMessage();

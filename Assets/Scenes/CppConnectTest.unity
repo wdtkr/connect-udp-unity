@@ -669,7 +669,7 @@ MonoBehaviour:
   receiveTextLog: {fileID: 1574555471}
   messageInputField: {fileID: 1211533661}
   port: 8000
-  peerFqdn: 192.168.11.2
+  peerFqdn: 127.0.0.1
 --- !u!4 &577037547
 Transform:
   m_ObjectHideFlags: 0
