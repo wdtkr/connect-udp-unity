@@ -31,6 +31,7 @@ public class UdpScript : MonoBehaviour
 
     [DllImport("udp-lib")]
     private static extern void receiveUDPMessage();
+
     [DllImport("udp-lib")]
     private static extern void socketClose();
 
@@ -44,24 +45,20 @@ public class UdpScript : MonoBehaviour
     [SerializeField] private int port = 8000;
     [SerializeField] private string peerFqdn = null;
     private string _myFqdn;
-    
+
     private static Subject<string> _staticMessageSubject = new Subject<string>();
     private static object _staticLock = new object();
     private static SynchronizationContext _mainThread;
 
-    private List<string> _messageLog = new List<string>()
-    {
-        "aaa",
-        "bbb",
-    };
+    private List<string> _messageLog = new List<string>() { };
 
     private void Start()
     {
         _mainThread = SynchronizationContext.Current;
-        
+
         receiveTextLog.text = "";
         peerFqdnText.text = peerFqdn;
-        
+
         sendButton.onClick.AddListener(() => SendData(messageInputField.text));
         startReceiveButton.onClick.AddListener(StartReceiveLoop);
         endReceiveButton.onClick.AddListener(() =>
@@ -71,8 +68,7 @@ public class UdpScript : MonoBehaviour
             Debug.Log("停止ボタンによるスレッド停止。");
         });
 
-        _staticMessageSubject
-            .ObserveOnMainThread()
+        _staticMessageSubject.ObserveOnMainThread()
             .Subscribe(msg =>
             {
                 _messageLog.Insert(0, $"{DateTime.Now}:{msg}");
@@ -80,8 +76,10 @@ public class UdpScript : MonoBehaviour
                 {
                     _messageLog.RemoveAt(_messageLog.Count - 1);
                 }
+
                 receiveTextLog.text = string.Join("\n", _messageLog);
-            }).AddTo(this);
+            })
+            .AddTo(this);
 
         // SetFqdn();
     }
@@ -146,7 +144,6 @@ public class UdpScript : MonoBehaviour
     public void DebugCallback(string message)
     {
         Debug.Log(message);
-        
     }
 
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
@@ -154,7 +151,7 @@ public class UdpScript : MonoBehaviour
     {
         Debug.Log("ReceiveData Start");
         Debug.Log("Called from C++, ReceiveData : " + message);
-        
+
         lock (_staticLock)
         {
             _mainThread.Post(_ => _staticMessageSubject.OnNext(message), null);
