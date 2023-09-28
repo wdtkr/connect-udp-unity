@@ -55,8 +55,9 @@ public class UdpScript : MonoBehaviour
     private delegate void DebugCallbackDelegate(string message);
     
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void CallbackDelegate(byte[] data);
-
+    private delegate void CallbackDelegate(
+        [MarshalAs(UnmanagedType.LPArray, SizeParamIndex=1)] byte[] data, int size);
+    
     private Thread _receiveThread;
     private Subject<string> _subject = new Subject<string>();
 
@@ -173,8 +174,11 @@ public class UdpScript : MonoBehaviour
     }
 
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
-    public void ReceiveData(byte[] data)
+    public void ReceiveData(byte[] data, int size)
     {
+        var receivedData = new byte[size];
+        Array.Copy(data, receivedData, size);
+        
         Debug.Log("ReceiveData Start");
         Debug.Log("Called from C++, ReceiveData : " + data);
 
