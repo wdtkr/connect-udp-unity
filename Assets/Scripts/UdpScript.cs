@@ -202,9 +202,9 @@ public class UdpScript : MonoBehaviour
             _mainThread.Post(_ => 
             {
                 // ビデオデータの場合の処理
-                // _staticVideoSubject.OnNext(data);
+                _staticVideoSubject.OnNext(data);
                 // その他の受信データ処理
-                _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data));
+                // _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data));
             }, null);
         }
     }
