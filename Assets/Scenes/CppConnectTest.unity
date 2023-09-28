@@ -674,7 +674,7 @@ MonoBehaviour:
   myVideoCapture: {fileID: 2040995748}
   peerVideoCapture: {fileID: 1672447644}
   port: 8000
-  peerFqdn: 127.0.0.1
+  peerFqdn: 10.0.2.58
 --- !u!4 &577037547
 Transform:
   m_ObjectHideFlags: 0
