@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -12,11 +13,21 @@ public class UdpScript : MonoBehaviour
     public Button startReceiveButton;
     public Button endReceiveButton;
     public Button sendButton;
+    public Button startVideoButton;
 
     public Text peerFqdnText;
     public Text receiveTextLog;
 
     public InputField messageInputField;
+
+    public GameObject stringTestPanel;
+    public GameObject videoTestPanel;
+
+    public RawImage videoCapture;
+    private WebCamTexture _webCamTexture;
+    
+    private Color32[] _tmpBuffer;
+    private SingleAssignmentDisposable _disposable = new SingleAssignmentDisposable();
 
     // C++のライブラリから呼び出す関数の宣言
     [DllImport("udp-lib")]
@@ -66,6 +77,14 @@ public class UdpScript : MonoBehaviour
             _receiveThread.Abort();
             socketClose();
             Debug.Log("停止ボタンによるスレッド停止。");
+        });
+        
+        startVideoButton.onClick.AddListener(() =>
+        {
+            stringTestPanel.SetActive(false);
+            videoTestPanel.SetActive(true);
+            
+            StartCoroutine(StartVideoStream());
         });
 
         _staticMessageSubject.ObserveOnMainThread()
@@ -173,5 +192,39 @@ public class UdpScript : MonoBehaviour
         {
             receiveUDPMessage();
         }
+    }
+
+    private IEnumerator StartVideoStream()
+    {
+        var devices = WebCamTexture.devices;
+        foreach (var device in devices)
+        {
+            Debug.Log(device.name);
+        }
+
+        if (devices.Length <= 0) yield break;
+        _webCamTexture = new WebCamTexture(devices[0].name, 640, 480,30); // 幅と高さを明示的に設定
+        videoCapture.texture = _webCamTexture;
+        _webCamTexture.Play();
+        
+        // WebCamTexture.widthが100以下の状況の場合初期化が完了していないので、100以上になるまで待機
+        while (_webCamTexture.width < 100) {
+            yield return null;
+        }
+
+        // カメラがスタートしてからバッファのサイズを設定
+        _tmpBuffer = new Color32[_webCamTexture.width * _webCamTexture.height];
+        
+        _disposable.Disposable = Observable.EveryUpdate()
+            .Subscribe(_ => {
+                _webCamTexture.GetPixels32(_tmpBuffer);
+                
+            });
+    }
+
+    private void StopVideoStream()
+    {
+        _disposable.Dispose();
+        _webCamTexture.Stop();
     }
 }
