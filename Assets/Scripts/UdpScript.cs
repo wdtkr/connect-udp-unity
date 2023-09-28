@@ -56,7 +56,7 @@ public class UdpScript : MonoBehaviour
     
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void CallbackDelegate(
-        [MarshalAs(UnmanagedType.LPArray, SizeParamIndex=1)] byte[] data, int size);
+        [MarshalAs(UnmanagedType.LPArray, SizeParamIndex=1)] byte[] data, int size, int type);
     
     private Thread _receiveThread;
     private Subject<string> _subject = new Subject<string>();
@@ -174,17 +174,29 @@ public class UdpScript : MonoBehaviour
     }
 
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
-    public void ReceiveData(byte[] data, int size)
+    public void ReceiveData(byte[] data, int size, int type)
     {
+        // todo: switch type
+        
         var receivedData = new byte[size];
         Array.Copy(data, receivedData, size);
-        
+    
         Debug.Log("ReceiveData Start");
-        Debug.Log("Called from C++, ReceiveData : " + data);
 
+        // 画像データをTexture2Dとしてロード
+        Texture2D receivedTexture = new Texture2D(2, 2);
+        receivedTexture.LoadImage(receivedData); // receivedDataはbyte[]
+
+        // メインスレッドでUIにアクセス
         lock (_staticLock)
         {
-            _mainThread.Post(_ => _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data)), null);
+            _mainThread.Post(_ => 
+            {
+                // RawImageにテクスチャを設定
+                peerVideoCapture.texture = receivedTexture;
+                // // その他の受信データ処理
+                // _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data));
+            }, null);
         }
     }
 
