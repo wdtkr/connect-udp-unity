@@ -66,6 +66,8 @@ public class UdpScript : MonoBehaviour
     private string _myFqdn;
 
     private static Subject<string> _staticMessageSubject = new Subject<string>();
+    private static Subject<byte[]> _staticVideoSubject = new Subject<byte[]>();
+    
     private static object _staticLock = new object();
     private static SynchronizationContext _mainThread;
 
@@ -105,6 +107,17 @@ public class UdpScript : MonoBehaviour
                 }
 
                 receiveTextLog.text = string.Join("\n", _messageLog);
+            })
+            .AddTo(this);
+        
+        _staticVideoSubject.ObserveOnMainThread()
+            .Subscribe(data =>
+            {
+                // 画像データをTexture2Dとしてロード
+                Texture2D receivedTexture = new Texture2D(2, 2);
+                receivedTexture.LoadImage(data); // receivedDataはbyte[]
+                
+                peerVideoCapture.texture = receivedTexture;
             })
             .AddTo(this);
 
@@ -177,24 +190,19 @@ public class UdpScript : MonoBehaviour
     public void ReceiveData(byte[] data, int size, int type)
     {
         // todo: switch type
-        
         var receivedData = new byte[size];
         Array.Copy(data, receivedData, size);
     
         Debug.Log("ReceiveData Start");
-
-        // 画像データをTexture2Dとしてロード
-        Texture2D receivedTexture = new Texture2D(2, 2);
-        receivedTexture.LoadImage(receivedData); // receivedDataはbyte[]
-
+        
         // メインスレッドでUIにアクセス
         lock (_staticLock)
         {
             _mainThread.Post(_ => 
             {
-                // RawImageにテクスチャを設定
-                peerVideoCapture.texture = receivedTexture;
-                // // その他の受信データ処理
+                // ビデオデータの場合の処理
+                _staticVideoSubject.OnNext(data);
+                // その他の受信データ処理
                 // _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data));
             }, null);
         }
