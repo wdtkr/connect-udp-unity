@@ -23,19 +23,23 @@ public class UdpScript : MonoBehaviour
     public GameObject stringTestPanel;
     public GameObject videoTestPanel;
 
-    public RawImage videoCapture;
+    public RawImage myVideoCapture;
+    public RawImage peerVideoCapture;
+    
     private WebCamTexture _webCamTexture;
     
     private Color32[] _tmpBuffer;
     private SingleAssignmentDisposable _disposable = new SingleAssignmentDisposable();
+    
+    private Texture2D _textureTmp;
 
     // C++のライブラリから呼び出す関数の宣言
     [DllImport("udp-lib")]
-    private static extern void setCallback(CallbackDelegate debugCallback, CallbackDelegate receiveCallback,
-        CallbackDelegate startCallback);
+    private static extern void setCallback(DebugCallbackDelegate debugCallback, CallbackDelegate receiveCallback,
+        DebugCallbackDelegate startCallback);
 
     [DllImport("udp-lib")]
-    private static extern void sendUDPMessage(string fqdn, int port, string message);
+    private static extern void sendUDPMessage(string fqdn, int port, byte[] message);
 
     [DllImport("udp-lib")]
     private static extern void preReceiveUDPMessage(int port);
@@ -48,7 +52,10 @@ public class UdpScript : MonoBehaviour
 
     // コールバックのデリゲート型定義
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void CallbackDelegate(string message);
+    private delegate void DebugCallbackDelegate(string message);
+    
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void CallbackDelegate(byte[] data);
 
     private Thread _receiveThread;
     private Subject<string> _subject = new Subject<string>();
@@ -70,7 +77,7 @@ public class UdpScript : MonoBehaviour
         receiveTextLog.text = "";
         peerFqdnText.text = peerFqdn;
 
-        sendButton.onClick.AddListener(() => SendData(messageInputField.text));
+        sendButton.onClick.AddListener(() => SendData(System.Text.Encoding.UTF8.GetBytes(messageInputField.text)));
         startReceiveButton.onClick.AddListener(StartReceiveLoop);
         endReceiveButton.onClick.AddListener(() =>
         {
@@ -129,7 +136,7 @@ public class UdpScript : MonoBehaviour
         preReceiveUDPMessage(port);
     }
 
-    private void SendData(string message)
+    private void SendData(byte[] data)
     {
         if (peerFqdn == null)
         {
@@ -140,7 +147,7 @@ public class UdpScript : MonoBehaviour
         // IPAddressでの接続
         if (IPAddress.TryParse(peerFqdn, out var ipAddress))
         {
-            sendUDPMessage(peerFqdn, port, message);
+            sendUDPMessage(peerFqdn, port, data);
             return;
         }
 
@@ -150,7 +157,7 @@ public class UdpScript : MonoBehaviour
             var ipAddresses = Dns.GetHostAddresses(peerFqdn);
             if (ipAddresses.Length > 0) Debug.LogError("ドメインからIPアドレスが解決できませんでした。");
             // FQDNを指定した時にipAddressesに何が入ってるか確認。ここに実（or仮想）IPが入ってる？FQDNは入ってない？
-            sendUDPMessage(peerFqdn, port, message);
+            sendUDPMessage(peerFqdn, port, data);
         }
         catch (Exception e)
         {
@@ -159,25 +166,25 @@ public class UdpScript : MonoBehaviour
         }
     }
 
-    [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
+    [AOT.MonoPInvokeCallback(typeof(DebugCallbackDelegate))]
     public void DebugCallback(string message)
     {
         Debug.Log(message);
     }
 
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
-    public void ReceiveData(string message)
+    public void ReceiveData(byte[] data)
     {
         Debug.Log("ReceiveData Start");
-        Debug.Log("Called from C++, ReceiveData : " + message);
+        Debug.Log("Called from C++, ReceiveData : " + data);
 
         lock (_staticLock)
         {
-            _mainThread.Post(_ => _staticMessageSubject.OnNext(message), null);
+            _mainThread.Post(_ => _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data)), null);
         }
     }
 
-    [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
+    [AOT.MonoPInvokeCallback(typeof(DebugCallbackDelegate))]
     public void StartCallback(string message)
     {
         Debug.Log(message);
@@ -204,7 +211,7 @@ public class UdpScript : MonoBehaviour
 
         if (devices.Length <= 0) yield break;
         _webCamTexture = new WebCamTexture(devices[0].name, 640, 480,30); // 幅と高さを明示的に設定
-        videoCapture.texture = _webCamTexture;
+        myVideoCapture.texture = _webCamTexture;
         _webCamTexture.Play();
         
         // WebCamTexture.widthが100以下の状況の場合初期化が完了していないので、100以上になるまで待機
@@ -215,10 +222,19 @@ public class UdpScript : MonoBehaviour
         // カメラがスタートしてからバッファのサイズを設定
         _tmpBuffer = new Color32[_webCamTexture.width * _webCamTexture.height];
         
+        StartReceiveLoop();
+        
         _disposable.Disposable = Observable.EveryUpdate()
             .Subscribe(_ => {
                 _webCamTexture.GetPixels32(_tmpBuffer);
-                
+                _textureTmp = new Texture2D(_webCamTexture.height, _webCamTexture.width, TextureFormat.ARGB32, false);
+                // カメラのピクセルデータを設定
+                _textureTmp.SetPixels32(_tmpBuffer);
+                // TextureをApply
+                _textureTmp.Apply();
+                // Encode
+                byte[] bin = _textureTmp.EncodeToJPG();
+                SendData(bin);
             });
     }
 
