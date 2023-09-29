@@ -80,7 +80,7 @@ public class UdpScript : MonoBehaviour
         receiveTextLog.text = "";
         peerFqdnText.text = peerFqdn;
 
-        sendButton.onClick.AddListener(() => SendData(System.Text.Encoding.UTF8.GetBytes(messageInputField.text)));
+        sendButton.onClick.AddListener(() => SendStringData(messageInputField.text));
         // sendButton.onClick.AddListener(() => SendData(messageInputField.text));
         startReceiveButton.onClick.AddListener(StartReceiveLoop);
         endReceiveButton.onClick.AddListener(() =>
@@ -152,7 +152,7 @@ public class UdpScript : MonoBehaviour
         preReceiveUDPMessage(port);
     }
 
-    private void SendData(byte[] data)
+    private void SendStringData(string data)
     {
         if (peerFqdn == null)
         {
@@ -163,8 +163,10 @@ public class UdpScript : MonoBehaviour
         // IPAddressでの接続
         if (IPAddress.TryParse(peerFqdn, out var ipAddress))
         {
-            Debug.Log("C# 送信前段階1：" + System.Text.Encoding.UTF8.GetString(data));
-            sendUDPMessage(peerFqdn, port, data);
+            Debug.Log("C# 送信前段階1：" + data);
+            
+            sendUDPMessage(peerFqdn, port, System.Text.Encoding.UTF8.GetBytes(data));
+            // sendUDPMessage(peerFqdn, port, data);
             return;
         }
 
@@ -174,7 +176,7 @@ public class UdpScript : MonoBehaviour
             var ipAddresses = Dns.GetHostAddresses(peerFqdn);
             if (ipAddresses.Length > 0) Debug.LogError("ドメインからIPアドレスが解決できませんでした。");
             // FQDNを指定した時にipAddressesに何が入ってるか確認。ここに実（or仮想）IPが入ってる？FQDNは入ってない？
-            sendUDPMessage(peerFqdn, port, data);
+            sendUDPMessage(peerFqdn, port, System.Text.Encoding.UTF8.GetBytes(data));
         }
         catch (Exception e)
         {
@@ -197,12 +199,7 @@ public class UdpScript : MonoBehaviour
         Array.Copy(data, receivedData, size);
         
         Debug.Log("C# 受信後段階：" + System.Text.Encoding.UTF8.GetString(receivedData));
-        
-        foreach (var tmp in receivedData)
-        {
-            Debug.Log("data : " + BitConverter.ToString(receivedData) + " ... size : " + size);
-        }
-        
+
         // メインスレッドでUIにアクセス
         lock (_staticLock)
         {
