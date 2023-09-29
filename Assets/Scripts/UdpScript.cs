@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Net;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using UniRx;
 using UnityEngine;
@@ -81,7 +80,7 @@ public class UdpScript : MonoBehaviour
         receiveTextLog.text = "";
         peerFqdnText.text = peerFqdn;
 
-        sendButton.onClick.AddListener(() => SendData(Encoding.GetEncoding("utf-16").GetBytes(messageInputField.text)));
+        sendButton.onClick.AddListener(() => SendData(System.Text.Encoding.UTF8.GetBytes(messageInputField.text)));
         // sendButton.onClick.AddListener(() => SendData(messageInputField.text));
         startReceiveButton.onClick.AddListener(StartReceiveLoop);
         endReceiveButton.onClick.AddListener(() =>
@@ -164,8 +163,7 @@ public class UdpScript : MonoBehaviour
         // IPAddressでの接続
         if (IPAddress.TryParse(peerFqdn, out var ipAddress))
         {
-            string a;
-            Debug.Log("C# 送信前段階1：" + Encoding.GetEncoding("utf-16").GetString(data));
+            Debug.Log("C# 送信前段階1：" + System.Text.Encoding.UTF8.GetString(data));
             sendUDPMessage(peerFqdn, port, data);
             return;
         }
@@ -198,7 +196,7 @@ public class UdpScript : MonoBehaviour
         var receivedData = new byte[size];
         Array.Copy(data, receivedData, size);
         
-        Debug.Log("C# 受信後段階：" + Encoding.GetEncoding("utf-16").GetString(receivedData));
+        Debug.Log("C# 受信後段階：" + System.Text.Encoding.UTF8.GetString(receivedData));
         
         foreach (var tmp in receivedData)
         {
@@ -213,7 +211,7 @@ public class UdpScript : MonoBehaviour
                 // ビデオデータの場合の処理
                 // _staticVideoSubject.OnNext(receivedData);
                 // その他の受信データ処理
-                _staticMessageSubject.OnNext(Encoding.GetEncoding("utf-16").GetString(data));
+                _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data));
             }, null);
         }
     }
