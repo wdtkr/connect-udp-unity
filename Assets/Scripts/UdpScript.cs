@@ -193,8 +193,12 @@ public class UdpScript : MonoBehaviour
         // todo: switch type
         var receivedData = new byte[size];
         Array.Copy(data, receivedData, size);
-    
-        Debug.Log("ReceiveData Start");
+        
+        
+        foreach (var tmp in receivedData)
+        {
+            Debug.Log("data : " + BitConverter.ToString(receivedData) + " ... size : " + size);
+        }
         
         // メインスレッドでUIにアクセス
         lock (_staticLock)
@@ -202,9 +206,9 @@ public class UdpScript : MonoBehaviour
             _mainThread.Post(_ => 
             {
                 // ビデオデータの場合の処理
-                _staticVideoSubject.OnNext(data);
+                // _staticVideoSubject.OnNext(receivedData);
                 // その他の受信データ処理
-                // _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data));
+                _staticMessageSubject.OnNext(System.Text.Encoding.UTF8.GetString(data));
             }, null);
         }
     }
@@ -260,6 +264,7 @@ public class UdpScript : MonoBehaviour
                 // Encode
                 byte[] bin = _textureTmp.EncodeToJPG();
                 SendData(bin);
+                Debug.Log(BitConverter.ToString(bin));
             });
     }
 
