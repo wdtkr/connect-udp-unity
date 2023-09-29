@@ -81,6 +81,7 @@ public class UdpScript : MonoBehaviour
         peerFqdnText.text = peerFqdn;
 
         sendButton.onClick.AddListener(() => SendData(System.Text.Encoding.UTF8.GetBytes(messageInputField.text)));
+        // sendButton.onClick.AddListener(() => SendData(messageInputField.text));
         startReceiveButton.onClick.AddListener(StartReceiveLoop);
         endReceiveButton.onClick.AddListener(() =>
         {
@@ -162,6 +163,7 @@ public class UdpScript : MonoBehaviour
         // IPAddressでの接続
         if (IPAddress.TryParse(peerFqdn, out var ipAddress))
         {
+            Debug.Log("C# 送信前段階：" + System.Text.Encoding.UTF8.GetString(data));
             sendUDPMessage(peerFqdn, port, data);
             return;
         }
@@ -194,6 +196,7 @@ public class UdpScript : MonoBehaviour
         var receivedData = new byte[size];
         Array.Copy(data, receivedData, size);
         
+        Debug.Log("C# 送信後段階：" + System.Text.Encoding.UTF8.GetString(receivedData));
         
         foreach (var tmp in receivedData)
         {
@@ -263,7 +266,7 @@ public class UdpScript : MonoBehaviour
                 _textureTmp.Apply();
                 // Encode
                 byte[] bin = _textureTmp.EncodeToJPG();
-                SendData(bin);
+                // SendData(bin);
                 Debug.Log(BitConverter.ToString(bin));
             });
     }
