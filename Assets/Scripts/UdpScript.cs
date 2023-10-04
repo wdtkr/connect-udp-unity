@@ -164,8 +164,8 @@ public class UdpScript : MonoBehaviour
         if (IPAddress.TryParse(peerFqdn, out var ipAddress))
         {
             Debug.Log("C# 送信前段階1：" + data);
-            
-            sendUDPMessage(peerFqdn, port, System.Text.Encoding.UTF8.GetBytes(data));
+            byte[] dataBytes = System.Text.Encoding.UTF8.GetBytes(data + "\0");
+            sendUDPMessage(peerFqdn, port, dataBytes);
             // sendUDPMessage(peerFqdn, port, data);
             return;
         }
