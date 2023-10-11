@@ -164,9 +164,10 @@ public class UdpScript : MonoBehaviour
         if (IPAddress.TryParse(peerFqdn, out var ipAddress))
         {
             Debug.Log("C# 送信前段階1：" + data);
+            
+            // 末尾に\0を入れて、文字列の終端を明示的にする必要がある
             byte[] dataBytes = System.Text.Encoding.UTF8.GetBytes(data + "\0");
             sendUDPMessage(peerFqdn, port, dataBytes);
-            // sendUDPMessage(peerFqdn, port, data);
             return;
         }
 
