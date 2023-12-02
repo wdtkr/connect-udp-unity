@@ -11,32 +11,27 @@ using UnityEngine;
 using UnityEngine.UI;
 public class UdpScript : MonoBehaviour
 {
-    public Button startReceiveButton;
-    public Button endReceiveButton;
-    public Button sendButton;
-    public Button startVideoButton;
-
-    public Button receiveTestVideoButton;
-    public Button appStopButton;
-
-    public Text peerFqdnText;
-    public Text receiveTextLog;
-
+    // UI要素
+    public Button startReceiveButton, endReceiveButton, sendButton, startVideoButton;
+    public Button receiveTestVideoButton, appStopButton;
+    public Text peerFqdnText, receiveTextLog;
     public InputField messageInputField;
+    public GameObject stringTestPanel, videoTestPanel;
+    public RawImage myVideoCapture, peerVideoCapture;
 
-    public GameObject stringTestPanel;
-    public GameObject videoTestPanel;
-
-    public RawImage myVideoCapture;
-    public RawImage peerVideoCapture;
-    
+    // プライベート変数
     private WebCamTexture _webCamTexture;
-    
     private Color32[] _tmpBuffer;
     private SingleAssignmentDisposable _disposable = new SingleAssignmentDisposable();
-    
     private Texture2D _textureTmp;
-    
+    private Thread _receiveThread;
+    private static Subject<string> _staticMessageSubject = new Subject<string>();
+    private static Subject<byte[]> _staticVideoSubject = new Subject<byte[]>();
+    private static object _staticLock = new object();
+    private static SynchronizationContext _mainThread;
+    private List<string> _messageLog = new List<string>() { };
+    private Texture2D _receivedTexture;
+
     /* =============================
      * UDPライブラリから呼び出す関数の宣言
      ============================= */
@@ -89,22 +84,10 @@ public class UdpScript : MonoBehaviour
     private delegate void CallbackDelegate(
         [MarshalAs(UnmanagedType.LPArray, SizeParamIndex=1)] byte[] data, int size, int type);
     
-    private Thread _receiveThread;
-    private Subject<string> _subject = new Subject<string>();
-
     [SerializeField] private int port = 8000;
     [SerializeField] private string peerFqdn = null;
     private string _myFqdn;
 
-    private static Subject<string> _staticMessageSubject = new Subject<string>();
-    private static Subject<byte[]> _staticVideoSubject = new Subject<byte[]>();
-    
-    private Texture2D _receivedTexture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false);
-    
-    private static object _staticLock = new object();
-    private static SynchronizationContext _mainThread;
-
-    private List<string> _messageLog = new List<string>() { };
     
     private int switchFlag = 0;
     private bool videoStreamFlag = false;
@@ -112,47 +95,15 @@ public class UdpScript : MonoBehaviour
     
     private void Start()
     {
+        _receivedTexture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false);
         // test
         setCallback(DebugCallback, ReceiveTestVideo);
         setLibraryPath("./Assets/Plugins/CppConnect/libopenh264-2.3.1-mac-arm64.dylib");
         test();
         
         _mainThread = SynchronizationContext.Current;
-
-        receiveTextLog.text = "";
-        peerFqdnText.text = peerFqdn;
-
-        sendButton.onClick.AddListener(() => SendStringData(messageInputField.text));
-        // sendButton.onClick.AddListener(() => SendData(messageInputField.text));
-        startReceiveButton.onClick.AddListener(() =>
-        {
-            stringStreamFlag = true;
-            StartReceiveLoop();
-        });
-        appStopButton.onClick.AddListener(TestStop);
-        endReceiveButton.onClick.AddListener(() =>
-        {
-            if (switchFlag != 1) return;
-            _receiveThread?.Abort();
-            socketClose();
-            Debug.Log("停止ボタンによるスレッド停止。");
-        });
         
-        startVideoButton.onClick.AddListener(() =>
-        {
-            switchFlag = 2;
-            stringTestPanel.SetActive(false);
-            videoTestPanel.SetActive(true);
-            StartCoroutine(StartVideoStream());
-        });
-        
-        receiveTestVideoButton.onClick.AddListener(() =>
-        {
-            switchFlag = 3;
-            stringTestPanel.SetActive(false);
-            videoTestPanel.SetActive(true);
-            ReceiveTestStartVideoStream();
-        });
+        SetupUI();
 
         _staticMessageSubject.ObserveOnMainThread()
             .Subscribe(msg =>
@@ -179,6 +130,50 @@ public class UdpScript : MonoBehaviour
         // SetFqdn();
     }
 
+    private void SetupUI()
+    {
+        receiveTextLog.text = "";
+        peerFqdnText.text = peerFqdn;
+        
+        sendButton.onClick.AddListener(() => SendStringData(messageInputField.text));
+        startReceiveButton.onClick.AddListener(() =>
+        {
+            stringStreamFlag = true;
+            StartReceiveLoop();
+        });
+        appStopButton.onClick.AddListener(async () =>
+        {
+            stringTestPanel.SetActive(true);
+            videoTestPanel.SetActive(false);
+            await CleanupApplication();
+        });
+        endReceiveButton.onClick.AddListener(() =>
+        {
+            if (switchFlag != 1 || !stringStreamFlag) return;
+            _receiveThread?.Abort();
+            socketClose();
+            Debug.Log("停止ボタンによるスレッド停止。");
+        });
+        
+        startVideoButton.onClick.AddListener(() =>
+        {
+            switchFlag = 2;
+            videoStreamFlag = true;
+            stringTestPanel.SetActive(false);
+            videoTestPanel.SetActive(true);
+            StartCoroutine(StartVideoStream());
+        });
+        
+        receiveTestVideoButton.onClick.AddListener(() =>
+        {
+            switchFlag = 3;
+            videoStreamFlag = true;
+            stringTestPanel.SetActive(false);
+            videoTestPanel.SetActive(true);
+            ReceiveTestStartVideoStream();
+        });
+    }
+
     private async void OnApplicationQuit()
     {
         Debug.Log("終了ボタンによるスレッド停止。");
@@ -188,25 +183,16 @@ public class UdpScript : MonoBehaviour
     // 自作の停止関数
     private async Task CleanupApplication()
     {
-        _receiveThread?.Abort();
-        if(switchFlag == 1) socketClose();
-
-        // ビデオ送信開始してた場合
-        if(switchFlag == 2) StopVideoStream();
-        // ビデオ受信開始してた場合
-        if(switchFlag == 3) await Task.Run(destroyDecoder);
-    }
-
-    private void TestStop()
-    {
-        TestClean();
-    }
-    
-    private async void TestClean()
-    {
         _disposable?.Dispose();
         _receiveThread?.Abort();
-        await Task.Run(destroyDecoder);
+        if(switchFlag == 1 || stringStreamFlag) socketClose();
+        // ビデオ送信開始してた場合
+        if(switchFlag == 2 && videoStreamFlag) StopVideoStream();
+        // ビデオ受信開始してた場合
+        if(switchFlag == 3 && videoStreamFlag) await Task.Run(destroyDecoder);
+
+        videoStreamFlag = false;
+        switchFlag = 0;
     }
 
     private void SetPort(string portInp)
@@ -375,7 +361,6 @@ public class UdpScript : MonoBehaviour
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
     public void ReceiveTestVideo(byte[] data, int size, int type)
     {
-        Debug.Log("ReceiveTestVideoが呼ばれました size："+size);
         _staticVideoSubject.OnNext(data);
     }
 }
