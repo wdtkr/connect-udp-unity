@@ -23,8 +23,8 @@ public class UdpScript : MonoBehaviour
     private Color32[] _tmpBuffer;
     private SingleAssignmentDisposable _disposable = new SingleAssignmentDisposable();
     private Texture2D _textureTmp;
-    private Thread _receiveThread;
-    private Thread _tcpReceiveThread;
+    private Thread _receiveThread, _tcpReceiveThread;
+    private IEnumerator _tcpCoroutine;
     private static Subject<string> _staticMessageSubject = new Subject<string>();
     private static Subject<byte[]> _staticVideoSubject = new Subject<byte[]>();
     private static object _staticLock = new object();
@@ -161,11 +161,12 @@ public class UdpScript : MonoBehaviour
         
         startVideoButton.onClick.AddListener(() =>
         {
-            switchFlag = 2;
             videoStreamFlag = true;
             stringTestPanel.SetActive(false);
             videoTestPanel.SetActive(true);
-            StartCoroutine(StartVideoStream());
+            
+            _tcpCoroutine = StartVideoStream();
+            StartCoroutine(_tcpCoroutine);
         });
         
         receiveTestVideoButton.onClick.AddListener(() =>
@@ -191,10 +192,12 @@ public class UdpScript : MonoBehaviour
         _disposable?.Dispose();
         _receiveThread?.Abort();
         _tcpReceiveThread?.Abort();
+        if(_webCamTexture != null) _webCamTexture.Stop();
+        if(_tcpCoroutine != null) StopCoroutine(_tcpCoroutine);
         
         if(switchFlag == 1 || stringStreamFlag) socketClose();
         // ビデオ送信開始してた場合
-        if(switchFlag == 2 && videoStreamFlag) StopVideoStream();
+        if(switchFlag == 2 && videoStreamFlag) destroyEncoder();
         // ビデオ受信開始してた場合
         if(switchFlag == 3 && videoStreamFlag) await Task.Run(() =>
         {
@@ -205,7 +208,7 @@ public class UdpScript : MonoBehaviour
         videoStreamFlag = false;
         switchFlag = 0;
     }
-    
+
     // デバッグ用のコールバック関数
     [AOT.MonoPInvokeCallback(typeof(DebugCallbackDelegate))]
     public void DebugCallback(string message)
@@ -322,13 +325,13 @@ public class UdpScript : MonoBehaviour
     {
         while (true)
         {
-            // todo:スレッドとかで管理して、戻るボタン押下時に破棄するようにする
             // TCPで送信先が見つかるまで待機
             if (initializeTcpSender()) break;
             yield return new WaitForSeconds(1);
         }
         
         Debug.Log("StartVideoStreamを開始");
+        switchFlag = 2;
         initEncodeVideoData(1);
         // カメラのセットアップ
         var devices = WebCamTexture.devices;
@@ -368,14 +371,6 @@ public class UdpScript : MonoBehaviour
 
         // C++ のエンコード関数を呼び出し
         encodeVideoData(frameData,frameData.Length);
-    }
-
-    // カメラ映像の送信を停止する関数
-    private void StopVideoStream()
-    {
-        _disposable?.Dispose();
-        _webCamTexture.Stop();
-        destroyEncoder();
     }
 
     // カメラ映像の受信を開始する関数
