@@ -5,7 +5,6 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Palmmedia.ReportGenerator.Core.Parser.Analysis;
 using UniRx;
 using UnityEngine;
 using UnityEngine.UI;
@@ -16,7 +15,7 @@ public class UdpScript : MonoBehaviour
     public Button receiveTestVideoButton, appStopButton;
     public Text peerFqdnText, receiveTextLog;
     public InputField messageInputField;
-    public GameObject stringTestPanel, videoTestPanel;
+    public GameObject stringTestPanel, videoTestPanel, peerVideoObject;
     public RawImage myVideoCapture, peerVideoCapture;
 
     // プライベート変数
@@ -25,6 +24,7 @@ public class UdpScript : MonoBehaviour
     private SingleAssignmentDisposable _disposable = new SingleAssignmentDisposable();
     private Texture2D _textureTmp;
     private Thread _receiveThread;
+    private Thread _tcpReceiveThread;
     private static Subject<string> _staticMessageSubject = new Subject<string>();
     private static Subject<byte[]> _staticVideoSubject = new Subject<byte[]>();
     private static object _staticLock = new object();
@@ -60,7 +60,12 @@ public class UdpScript : MonoBehaviour
     
     [DllImport("media-lib")]
     private static extern void setLibraryPath(string libraryPath);
-    
+    [DllImport("media-lib")]
+    private static extern bool initializeTcpSender();
+    [DllImport("media-lib")]
+    private static extern bool initializeTcpReceiver();
+    [DllImport("media-lib")]
+    private static extern void closeTcpSocket();
     [DllImport("media-lib")]
     private static extern int initEncodeVideoData(int videoFormat);
     [DllImport("media-lib")]
@@ -95,7 +100,6 @@ public class UdpScript : MonoBehaviour
     
     private void Start()
     {
-        _receivedTexture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false);
         // test
         setCallback(DebugCallback, ReceiveTestVideo);
         setLibraryPath("./Assets/Plugins/CppConnect/libopenh264-2.3.1-mac-arm64.dylib");
@@ -130,8 +134,10 @@ public class UdpScript : MonoBehaviour
         // SetFqdn();
     }
 
+    // ボタンに処理追加など、UIのセットアップ関数
     private void SetupUI()
     {
+        _receivedTexture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false);
         receiveTextLog.text = "";
         peerFqdnText.text = peerFqdn;
         
@@ -139,7 +145,7 @@ public class UdpScript : MonoBehaviour
         startReceiveButton.onClick.AddListener(() =>
         {
             stringStreamFlag = true;
-            StartReceiveLoop();
+            StartStringReceiveLoop();
         });
         appStopButton.onClick.AddListener(async () =>
         {
@@ -149,9 +155,7 @@ public class UdpScript : MonoBehaviour
         });
         endReceiveButton.onClick.AddListener(() =>
         {
-            if (switchFlag != 1 || !stringStreamFlag) return;
-            _receiveThread?.Abort();
-            socketClose();
+            CleanupApplication();
             Debug.Log("停止ボタンによるスレッド停止。");
         });
         
@@ -174,25 +178,46 @@ public class UdpScript : MonoBehaviour
         });
     }
 
+    // アプリケーション停止時に実行される関数
     private async void OnApplicationQuit()
     {
         Debug.Log("終了ボタンによるスレッド停止。");
         await CleanupApplication();
     }
 
-    // 自作の停止関数
+    // 停止時のクリーンアップ用の関数
     private async Task CleanupApplication()
     {
         _disposable?.Dispose();
         _receiveThread?.Abort();
+        _tcpReceiveThread?.Abort();
+        
         if(switchFlag == 1 || stringStreamFlag) socketClose();
         // ビデオ送信開始してた場合
         if(switchFlag == 2 && videoStreamFlag) StopVideoStream();
         // ビデオ受信開始してた場合
-        if(switchFlag == 3 && videoStreamFlag) await Task.Run(destroyDecoder);
+        if(switchFlag == 3 && videoStreamFlag) await Task.Run(() =>
+        {
+            closeTcpSocket();
+            destroyDecoder();
+        });
 
         videoStreamFlag = false;
         switchFlag = 0;
+    }
+    
+    // デバッグ用のコールバック関数
+    [AOT.MonoPInvokeCallback(typeof(DebugCallbackDelegate))]
+    public void DebugCallback(string message)
+    {
+        Debug.Log(message);
+    }
+    [AOT.MonoPInvokeCallback(typeof(DebugCallbackDelegate))]
+    public void StartCallback(string message)
+    {
+        Debug.Log(message);
+        _receiveThread = new Thread(new ThreadStart(ReceiveLoop)) { IsBackground = true };
+        _receiveThread.Start();
     }
 
     private void SetPort(string portInp)
@@ -205,7 +230,12 @@ public class UdpScript : MonoBehaviour
         peerFqdn = fqdn;
     }
 
-    private void StartReceiveLoop()
+    /* ===========================================
+     *
+     *          文字列の送受信をおこなう関数
+     * 
+     ========================================== */
+    private void StartStringReceiveLoop()
     {
         // コールバック関数の設定
         setCallback(DebugCallback, ReceiveData, StartCallback);
@@ -213,6 +243,7 @@ public class UdpScript : MonoBehaviour
         preReceiveUDPMessage(port);
     }
 
+    // 送信関数
     private void SendStringData(string data)
     {
         if (peerFqdn == null)
@@ -246,13 +277,18 @@ public class UdpScript : MonoBehaviour
             throw;
         }
     }
-
-    [AOT.MonoPInvokeCallback(typeof(DebugCallbackDelegate))]
-    public void DebugCallback(string message)
+    
+    // 受信関数
+    private void ReceiveLoop()
     {
-        Debug.Log(message);
+        _staticMessageSubject.OnNext("受信を開始しました。");
+        while (true)
+        {
+            receiveUDPMessage();
+        }
     }
 
+    // 文字データ受信時に、C++からコールバックされる関数
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
     public void ReceiveData(byte[] data, int size, int type)
     {
@@ -275,25 +311,23 @@ public class UdpScript : MonoBehaviour
         }
     }
 
-    [AOT.MonoPInvokeCallback(typeof(DebugCallbackDelegate))]
-    public void StartCallback(string message)
-    {
-        Debug.Log(message);
-        _receiveThread = new Thread(new ThreadStart(ReceiveLoop)) { IsBackground = true };
-        _receiveThread.Start();
-    }
-
-    private void ReceiveLoop()
-    {
-        _staticMessageSubject.OnNext("受信を開始しました。");
-        while (true)
-        {
-            receiveUDPMessage();
-        }
-    }
-
+    /* ===========================================
+     *
+     *         映像データの送受信をおこなう関数
+     * 
+     ========================================== */
+    
+    // カメラ映像の送信を開始する関数
     private IEnumerator StartVideoStream()
     {
+        while (true)
+        {
+            // todo:スレッドとかで管理して、戻るボタン押下時に破棄するようにする
+            // TCPで送信先が見つかるまで待機
+            if (initializeTcpSender()) break;
+            yield return new WaitForSeconds(1);
+        }
+        
         Debug.Log("StartVideoStreamを開始");
         initEncodeVideoData(1);
         // カメラのセットアップ
@@ -320,6 +354,7 @@ public class UdpScript : MonoBehaviour
             });
     }
     
+    // 30FPSで呼ばれる、カメラ映像をフレームごとに取得し、エンコードを実行する関数
     private void CallEncodeVideoData()
     {
         // WebCamTexture を更新
@@ -335,6 +370,7 @@ public class UdpScript : MonoBehaviour
         encodeVideoData(frameData,frameData.Length);
     }
 
+    // カメラ映像の送信を停止する関数
     private void StopVideoStream()
     {
         _disposable?.Dispose();
@@ -342,13 +378,29 @@ public class UdpScript : MonoBehaviour
         destroyEncoder();
     }
 
+    // カメラ映像の受信を開始する関数
     private void ReceiveTestStartVideoStream()
     {
         initDecodeVideoData();
+        // TCPで受信待機
+        _tcpReceiveThread = new Thread(new ThreadStart(TcpReceiveStart)) { IsBackground = true };
+        _tcpReceiveThread.Start();
+
+        Debug.Log("受信スレッド作成.");
         _receiveThread = new Thread(new ThreadStart(ReceiveTestVideoDataLoop)) { IsBackground = true };
         _receiveThread.Start();
     }
 
+    // TCPでコネクションを受信する関数
+    private void TcpReceiveStart()
+    {
+        if (!initializeTcpReceiver())
+        {
+            Debug.Log("Failed to initialize TCP server");
+        }
+    }
+
+    // カメラ映像を受信する関数
     private void ReceiveTestVideoDataLoop()
     {
         Debug.Log("C#受信開始");
@@ -358,6 +410,7 @@ public class UdpScript : MonoBehaviour
         }
     }
 
+    // 映像データ受信時にC++からコールバックされる関数
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
     public void ReceiveTestVideo(byte[] data, int size, int type)
     {
