@@ -11,7 +11,7 @@ using UnityEngine.UI;
 public class UdpScript : MonoBehaviour
 {
     // UI要素
-    public Button startReceiveButton, endReceiveButton, sendButton, startVideoButton;
+    public Button startReceiveButton, endReceiveButton, sendButton, startVideoButton,streamingTestButton;
     public Button receiveTestVideoButton, appStopButton;
     public Text peerFqdnText, receiveTextLog;
     public InputField messageInputField;
@@ -79,6 +79,8 @@ public class UdpScript : MonoBehaviour
     [DllImport("media-lib")]
     private static extern void destroyDecoder();
     [DllImport("media-lib")]
+    private static extern void setAddressAndPort(string address, int mytcpport, int peertcpport, int myvideoport, int peervideoport, int myaudioport, int peeraudioport);
+    [DllImport("media-lib")]
     private static extern void test();
 
     // コールバックのデリゲート型定義
@@ -92,16 +94,25 @@ public class UdpScript : MonoBehaviour
     [SerializeField] private int port = 8000;
     [SerializeField] private string peerFqdn = null;
     private string _myFqdn;
-
+    
+    [SerializeField] private string peerAddress = "127.0.0.1";
+    [SerializeField] private int myTcpPort = 30000;
+    [SerializeField] private int peerTcpPort = 30001;
+    [SerializeField] private int myVideoPort = 30002;
+    [SerializeField] private int peerVideoPort = 30006;
+    [SerializeField] private int myAudioPort = 30004;
+    [SerializeField] private int peerAudioPort = 30008;
     
     private int switchFlag = 0;
     private bool videoStreamFlag = false;
     private bool stringStreamFlag = false;
+    private bool endTcpConnect = false;
     
     private void Start()
     {
         // test
         setCallback(DebugCallback, ReceiveTestVideo);
+        setAddressAndPort(peerAddress, myTcpPort, peerTcpPort, myVideoPort, peerVideoPort, myAudioPort, peerAudioPort);
         setLibraryPath("./Assets/Plugins/CppConnect/libopenh264-2.3.1-mac-arm64.dylib");
         test();
         
@@ -147,21 +158,22 @@ public class UdpScript : MonoBehaviour
             stringStreamFlag = true;
             StartStringReceiveLoop();
         });
+        
         appStopButton.onClick.AddListener(async () =>
         {
             stringTestPanel.SetActive(true);
             videoTestPanel.SetActive(false);
             await CleanupApplication();
         });
-        endReceiveButton.onClick.AddListener(() =>
+        
+        endReceiveButton.onClick.AddListener(async () =>
         {
-            CleanupApplication();
+            await CleanupApplication();
             Debug.Log("停止ボタンによるスレッド停止。");
         });
         
         startVideoButton.onClick.AddListener(() =>
         {
-            videoStreamFlag = true;
             stringTestPanel.SetActive(false);
             videoTestPanel.SetActive(true);
             
@@ -172,9 +184,19 @@ public class UdpScript : MonoBehaviour
         receiveTestVideoButton.onClick.AddListener(() =>
         {
             switchFlag = 3;
+            stringTestPanel.SetActive(false);
+            videoTestPanel.SetActive(true);
+            ReceiveTestStartVideoStream();
+        });
+        
+        streamingTestButton.onClick.AddListener(() =>
+        {
             videoStreamFlag = true;
             stringTestPanel.SetActive(false);
             videoTestPanel.SetActive(true);
+            
+            _tcpCoroutine = StartVideoStream();
+            StartCoroutine(_tcpCoroutine);
             ReceiveTestStartVideoStream();
         });
     }
@@ -197,9 +219,9 @@ public class UdpScript : MonoBehaviour
         
         if(switchFlag == 1 || stringStreamFlag) socketClose();
         // ビデオ送信開始してた場合
-        if(switchFlag == 2 && videoStreamFlag) destroyEncoder();
+        if(switchFlag == 2 || (videoStreamFlag && endTcpConnect)) destroyEncoder();
         // ビデオ受信開始してた場合
-        if(switchFlag == 3 && videoStreamFlag) await Task.Run(() =>
+        if(switchFlag == 3 || videoStreamFlag) await Task.Run(() =>
         {
             closeTcpSocket();
             destroyDecoder();
@@ -332,6 +354,7 @@ public class UdpScript : MonoBehaviour
         
         Debug.Log("StartVideoStreamを開始");
         switchFlag = 2;
+        endTcpConnect = true;
         initEncodeVideoData(1);
         // カメラのセットアップ
         var devices = WebCamTexture.devices;
