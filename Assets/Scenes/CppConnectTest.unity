@@ -686,6 +686,7 @@ MonoBehaviour:
   peerVideoPort: 30002
   myAudioPort: 30004
   peerAudioPort: 30008
+  cameraNumber: 1
 --- !u!4 &577037547
 Transform:
   m_ObjectHideFlags: 0
@@ -2287,7 +2288,7 @@ RectTransform:
   m_GameObject: {fileID: 1672447642}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: -0.23, y: -0.23, z: 1}
+  m_LocalScale: {x: -0.23, y: 0.23, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1057350913}

@@ -102,6 +102,7 @@ public class UdpScript : MonoBehaviour
     [SerializeField] private int peerVideoPort = 30006;
     [SerializeField] private int myAudioPort = 30004;
     [SerializeField] private int peerAudioPort = 30008;
+    [SerializeField] private int cameraNumber = 0;
     
     private int switchFlag = 0;
     private bool videoStreamFlag = false;
@@ -134,12 +135,7 @@ public class UdpScript : MonoBehaviour
             .AddTo(this);
         
         _staticVideoSubject.ObserveOnMainThread()
-            .Subscribe(data =>
-            {
-                _receivedTexture.LoadRawTextureData(data);
-                _receivedTexture.Apply();
-                peerVideoCapture.texture = _receivedTexture;
-            })
+            .Subscribe(UpdateReceivedTexture)
             .AddTo(this);
 
         // SetFqdn();
@@ -149,6 +145,8 @@ public class UdpScript : MonoBehaviour
     private void SetupUI()
     {
         _receivedTexture = new Texture2D(1920, 1080, TextureFormat.RGBA32, false);
+        peerVideoCapture.texture = _receivedTexture;
+        
         receiveTextLog.text = "";
         peerFqdnText.text = peerFqdn;
         
@@ -360,19 +358,20 @@ public class UdpScript : MonoBehaviour
         var devices = WebCamTexture.devices;
         if (devices.Length <= 0) yield break;
 
-        _webCamTexture = new WebCamTexture(devices[0].name, 1920, 1080, 30);
-        myVideoCapture.texture = _webCamTexture;
+        _webCamTexture = new WebCamTexture(devices[cameraNumber].name, 1920, 1080, 30);
         _webCamTexture.Play();
 
         // 初期化が完了するまで待機
         while (_webCamTexture.width < 100) 
         {
+            Debug.Log("カメラ初期化中");
             yield return null;
         }
 
         // バッファのサイズを設定
         _tmpBuffer = new Color32[_webCamTexture.width * _webCamTexture.height];
         _textureTmp = new Texture2D(_webCamTexture.width, _webCamTexture.height, TextureFormat.RGBA32, false);
+        myVideoCapture.texture = _textureTmp;
 
         _disposable.Disposable = Observable.Interval(TimeSpan.FromSeconds(1.0 / 30))
             .Subscribe(_ => {
@@ -387,8 +386,7 @@ public class UdpScript : MonoBehaviour
         _webCamTexture.GetPixels32(_tmpBuffer);
         _textureTmp.SetPixels32(_tmpBuffer);
         _textureTmp.Apply();
-
-        // peerVideoCapture.texture = _textureTmp;
+        
         // バイトデータを取得
         byte[] frameData = _textureTmp.GetRawTextureData();
 
@@ -425,6 +423,16 @@ public class UdpScript : MonoBehaviour
         while (true)
         {
             receiveAndDecodeVideoData();
+        }
+    }
+    
+    // 受信したビデオフレームでテクスチャを更新するメソッド
+    private void UpdateReceivedTexture(byte[] data)
+    {
+        if (_receivedTexture != null)
+        {
+            _receivedTexture.LoadRawTextureData(data);
+            _receivedTexture.Apply();
         }
     }
 
