@@ -684,9 +684,10 @@ MonoBehaviour:
   peerTcpPort: 30000
   myVideoPort: 30006
   peerVideoPort: 30002
-  myAudioPort: 30004
-  peerAudioPort: 30008
-  cameraNumber: 1
+  myAudioPort: 30008
+  peerAudioPort: 30004
+  cameraNumber: 0
+  micNumber: 0
 --- !u!4 &577037547
 Transform:
   m_ObjectHideFlags: 0
