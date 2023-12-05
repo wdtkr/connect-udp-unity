@@ -17,7 +17,10 @@ public class UdpScript : MonoBehaviour
     public Text peerFqdnText, receiveTextLog;
     public InputField messageInputField;
     public GameObject stringTestPanel, videoTestPanel, peerVideoObject;
+    
+    // API化した時に、使用者側が表示するために設定するUI
     public RawImage myVideoCapture, peerVideoCapture;
+    public AudioSource receiveAudioSource;
 
     // プライベート変数
     private WebCamTexture _webCamTexture;
@@ -25,10 +28,11 @@ public class UdpScript : MonoBehaviour
     private SingleAssignmentDisposable _sendVideoDisposable = new SingleAssignmentDisposable();
     private SingleAssignmentDisposable _sendAudioDisposable = new SingleAssignmentDisposable();
     private Texture2D _textureTmp;
-    private Thread _receiveThread, _tcpReceiveThread;
+    private Thread _receiveDataThread, _tcpReceiveThread, _receiveVideoThread, _receiveAudioThread;
     private IEnumerator _tcpCoroutine;
     private static Subject<string> _staticMessageSubject = new Subject<string>();
     private static Subject<byte[]> _staticVideoSubject = new Subject<byte[]>();
+    private static Subject<byte[]> _staticAudioSubject = new Subject<byte[]>();
     private static object _staticLock = new object();
     private static SynchronizationContext _mainThread;
     private List<string> _messageLog = new List<string>() { };
@@ -37,9 +41,13 @@ public class UdpScript : MonoBehaviour
     private int _micSampleRate = 48000; // サンプルレート
     private int _sampleSize = 960; // Opus FRAME_SIZEに合わせる
     private AudioClip _microphoneClip;
+    private AudioClip _receiveClip;
     private int _microphonePosition;
     private float[] _samples = new float[960];
     private byte[] _audioData;
+    private short[] _receiveShortAudioData;
+    private float[] _receiveFloatAudioData;
+
         
     [SerializeField] private int port = 8000;
     [SerializeField] private string peerFqdn = null;
@@ -93,6 +101,8 @@ public class UdpScript : MonoBehaviour
     private static extern bool initializeTcpReceiver();
     [DllImport("media-lib")]
     private static extern void closeTcpSocket();
+    
+    
     [DllImport("media-lib")]
     private static extern int initEncodeVideoData(int videoFormat);
     [DllImport("media-lib")]
@@ -101,15 +111,22 @@ public class UdpScript : MonoBehaviour
     private static extern void initEncodeAudioData();
     [DllImport("media-lib")]
     private static extern void encodeAudioData(byte[] audioData, int length);
-    
     [DllImport("media-lib")]
     private static extern void destroyEncoder();
+    
+    
     [DllImport("media-lib")]
     private static extern void initDecodeVideoData();
     [DllImport("media-lib")]
     private static extern void receiveAndDecodeVideoData();
     [DllImport("media-lib")]
+    private static extern void initDecodeAudioData();
+    [DllImport("media-lib")]
+    private static extern void receiveAndDecodeAudioData();
+    [DllImport("media-lib")]
     private static extern void destroyDecoder();
+    
+    
     [DllImport("media-lib")]
     private static extern void setAddressAndPort(string address, int mytcpport, int peertcpport, int myvideoport, int peervideoport, int myaudioport, int peeraudioport);
     [DllImport("media-lib")]
@@ -148,6 +165,10 @@ public class UdpScript : MonoBehaviour
         
         _staticVideoSubject.ObserveOnMainThread()
             .Subscribe(UpdateReceivedTexture)
+            .AddTo(this);
+        
+        _staticAudioSubject.ObserveOnMainThread()
+            .Subscribe(PlayReceiveAudioData)
             .AddTo(this);
 
         // SetFqdn();
@@ -224,7 +245,9 @@ public class UdpScript : MonoBehaviour
         _sendVideoDisposable?.Dispose();
         _sendAudioDisposable?.Dispose();
         
-        _receiveThread?.Abort();
+        _receiveDataThread?.Abort();
+        _receiveVideoThread?.Abort();
+        _receiveAudioThread?.Abort();
         _tcpReceiveThread?.Abort();
         
         if(_webCamTexture != null) _webCamTexture.Stop();
@@ -259,8 +282,8 @@ public class UdpScript : MonoBehaviour
     public void StartCallback(string message)
     {
         Debug.Log(message);
-        _receiveThread = new Thread(new ThreadStart(ReceiveLoop)) { IsBackground = true };
-        _receiveThread.Start();
+        _receiveDataThread = new Thread(new ThreadStart(ReceiveLoop)) { IsBackground = true };
+        _receiveDataThread.Start();
     }
 
     private void SetPort(string portInp)
@@ -472,13 +495,18 @@ public class UdpScript : MonoBehaviour
     private void ReceiveTestStartVideoStream()
     {
         initDecodeVideoData();
+        initDecodeAudioData();
+        
         // TCPで受信待機
         _tcpReceiveThread = new Thread(new ThreadStart(TcpReceiveStart)) { IsBackground = true };
         _tcpReceiveThread.Start();
 
-        Debug.Log("受信スレッド作成.");
-        _receiveThread = new Thread(new ThreadStart(ReceiveTestVideoDataLoop)) { IsBackground = true };
-        _receiveThread.Start();
+        Debug.Log("受信スレッド作成");
+        _receiveVideoThread = new Thread(new ThreadStart(ReceiveVideoLoop)) { IsBackground = true };
+        _receiveVideoThread.Start();
+
+        _receiveAudioThread = new Thread(new ThreadStart(ReceiveAudioLoop)) { IsBackground = true };
+        _receiveAudioThread.Start();
     }
 
     // TCPでコネクションを受信する関数
@@ -491,7 +519,7 @@ public class UdpScript : MonoBehaviour
     }
 
     // カメラ映像を受信する関数
-    private void ReceiveTestVideoDataLoop()
+    private void ReceiveVideoLoop()
     {
         Debug.Log("C#受信開始");
         while (true)
@@ -517,10 +545,42 @@ public class UdpScript : MonoBehaviour
         _staticVideoSubject.OnNext(data);
     }
     
+    // 音声を受信する関数
+    private void ReceiveAudioLoop()
+    {
+        Debug.Log("C#受信開始");
+        while (true)
+        {
+            receiveAndDecodeAudioData();
+        }
+    }
+    
+    private void PlayReceiveAudioData(byte[] audioData)
+    {
+        // 受信データを16ビット整数の配列に変換
+        _receiveShortAudioData = new short[audioData.Length / 2];
+        Buffer.BlockCopy(audioData, 0,  _receiveShortAudioData, 0, audioData.Length);
+
+        // float配列に変換
+        _receiveFloatAudioData = new float[_receiveShortAudioData.Length];
+        for (int i = 0; i < _receiveShortAudioData.Length; i++)
+        {
+            _receiveFloatAudioData[i] = _receiveShortAudioData[i] / (float)short.MaxValue;
+        }
+
+        // AudioClipの作成
+        _receiveClip = AudioClip.Create("ReceivedAudio", _receiveShortAudioData.Length, 1, 48000, false);
+        _receiveClip.SetData(_receiveFloatAudioData, 0);
+
+        // AudioClipの再生
+        receiveAudioSource.clip = _receiveClip;
+        receiveAudioSource.Play();
+    }
+    
     // 音声データ受信時にC++からコールバックされる関数
     [AOT.MonoPInvokeCallback(typeof(CallbackDelegate))]
     public void ReceiveAudio(byte[] data, int size, int type)
     {
-        // _staticVideoSubject.OnNext(data);
+        _staticAudioSubject.OnNext(data);
     }
 }
