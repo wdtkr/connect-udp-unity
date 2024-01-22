@@ -49,7 +49,7 @@ public class UdpScript : MonoBehaviour
     private float[] _receiveFloatAudioData;
 
         
-    [SerializeField] private int port = 8000;
+    [SerializeField] private int port = 8001;
     [SerializeField] private string peerFqdn = null;
 
     [SerializeField] private string peerAddress = "127.0.0.1";
@@ -306,7 +306,7 @@ public class UdpScript : MonoBehaviour
         // コールバック関数の設定
         setCallback(DebugCallback, ReceiveData, StartCallback);
 
-        preReceiveUDPMessage(port);
+        preReceiveUDPMessage(8000);
     }
 
     // 送信関数

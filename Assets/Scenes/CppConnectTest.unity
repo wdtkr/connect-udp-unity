@@ -806,15 +806,15 @@ MonoBehaviour:
   myVideoCapture: {fileID: 2040995748}
   peerVideoCapture: {fileID: 1672447644}
   receiveAudioSource: {fileID: 54291510}
-  port: 1234
-  peerFqdn: 127.0.0.1
-  peerAddress: 127.0.0.1
-  myTcpPort: 30001
-  peerTcpPort: 30000
-  myVideoPort: 30006
-  peerVideoPort: 30002
-  myAudioPort: 30008
-  peerAudioPort: 30004
+  port: 8001
+  peerFqdn: 10.0.2.2
+  peerAddress: 10.0.2.2
+  myTcpPort: 30000
+  peerTcpPort: 30001
+  myVideoPort: 30002
+  peerVideoPort: 30006
+  myAudioPort: 30004
+  peerAudioPort: 30008
   cameraNumber: 0
   micNumber: 0
 --- !u!4 &577037547
